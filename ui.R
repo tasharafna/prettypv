@@ -3,11 +3,7 @@ library(httr)
 library(RMySQL)
 library(shinyjs)
 
-##################
-
-source(creds.R)
-
-###################
+source("creds.R")
 
 GetStates <- function() {
   con <- dbConnect(RMySQL::MySQL(),
@@ -23,23 +19,28 @@ GetStates <- function() {
 }
 
 
-#################
+################# Shiny ########### 
 
 shinyUI(
   
   fluidPage(
 
+    ### Header
+
     tags$head(includeScript("google-analytics.js")),
     
     useShinyjs(),
     
-    headerPanel(h1("Pretty PV: twist the dials on a typical year going solar", style = "font-family: 'Garamond'; color: #4d3a7d;"), windowTitle = "Pretty PV"),
+    headerPanel(h1("Home Solar Export Estimator: twist the dials on a typical year", style = "font-family: 'Garamond'; color: #4d3a7d;"), windowTitle = "Pretty PV"),
 
-    helpText("Many US states & power utilities are ", a("proposing changes to long-standing net metering programs.", href="http://climatenexus.org/net-metering-fight-understanding-latest-issue-nation%E2%80%99s-rapidly-changing-electricity-market"), "The timing of onsite solar generation and onsite power use is becoming much more important. Pretty PV sums up hour-by-hour data from ", a("NREL",href="http://www.nrel.gov/"), " to illuminate the tradeoff between *minimizing* solar exports to the grid & *maximizing* solar coverage of household electricity use."),
+    helpText("Many US states & power utilities are ", a("proposing changes to long-standing net metering programs.", href="http://climatenexus.org/net-metering-fight-understanding-latest-issue-nation%E2%80%99s-rapidly-changing-electricity-market"), "The timing of onsite solar generation and onsite power use is becoming much more important. Home Solar Export Estimator sums up hour-by-hour data from ", a("NREL",href="http://www.nrel.gov/"), " to illuminate the tradeoff between *minimizing* solar exports to the grid & *maximizing* solar coverage of household electricity use."),
    
+   ### Sidebar
+
     sidebarLayout(
       
       sidebarPanel(
+        helpText("***Twist dials here***"),
                 
         tags$head(tags$style("#total_solar_text{color:#EB8A0C;font-size: 12px;font-style: bold;}")),
         tags$head(tags$style("#total_electric_text{color:#2A2936;font-size: 12px;font-style: bold;}")),
@@ -87,7 +88,7 @@ shinyUI(
               helpText("Data Sources: "),
               helpText(a("Load profiles (NREL OpenEI).", href="http://en.openei.org/doe-opendata/dataset/commercial-and-residential-hourly-load-profiles-for-all-tmy3-locations-in-the-united-states")),
               helpText(a("Solar generation (NREL PVWatts TMY3).", href="https://developer.nrel.gov/docs/solar/pvwatts-v5/")),
-              helpText("Pretty PV is a simple wrapper that combines two data sources: 1) Estimated hourly solar generation from NREL PVWatts at ~1000 U.S. locations based on PV system specs and irradidance from a 'typical meterological year', 2) Simulated hourly electricity use profiles (low, base, high) for each location based on generic household consumption patterns adjusted for local climate, also developed by NREL. Solar generation assumes 'standard' module type and 'fixed (roof-mount)' array type. Battery storage is assumed to have a 100% round-trip efficiency."),
+              helpText("Home Solar Export Estimator is a simple wrapper that combines two data sources: 1) Estimated hourly solar generation from NREL PVWatts at ~1000 U.S. locations based on PV system specs and irradidance from a 'typical meterological year', 2) Simulated hourly electricity use profiles (low, base, high) for each location based on generic household consumption patterns adjusted for local climate, also developed by NREL. Solar generation assumes 'standard' module type and 'fixed (roof-mount)' array type. Battery storage is assumed to have a 100% round-trip efficiency."),
               helpText("Want more detail on your specific home? Try ",a("Google Project Sunroof", href="https://www.google.com/get/sunroof#p=0")),
               helpText("- Built by ", a("Nick Culver", href="https://twitter.com/solarrec")," (2016)")
           )
@@ -99,14 +100,19 @@ shinyUI(
         
         width = 3
       ),
+
+      ### Main
+
       mainPanel(
+
+        helpText("***View results here***"),
   
         tabsetPanel(
-          tabPanel("Minimize solar export!", 
+          tabPanel("Solar export", 
                    tags$head(tags$style("#annual_export_share_text{color: #0C6199;font-size: 18px;font-style: bold}")),
                    plotOutput("solar_gen"), 
                    textOutput("annual_export_share_text")),
-          tabPanel("Maximize solar use!", 
+          tabPanel("Solar usage", 
                    tags$head(tags$style("#solar_share_text{color: #04B562;font-size: 18px;font-style: bold}")),
                    plotOutput("load"),
                    textOutput("solar_share_text")),

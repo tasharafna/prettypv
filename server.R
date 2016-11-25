@@ -7,22 +7,13 @@ library(ggplot2)
 library(lubridate)
 library(reshape2)
 
-
-##################
-
-
-# Set theme
 theme_set(theme_gray(base_size = 14))
 
-
-##################
-
-
-source(creds.R)
+source("creds.R")
 
 
-#####################
 
+################## Core functions #############
 
 
 PingSolarAPI <- function(state, city, raw_id, system_capacity, losses, azimuth, tilt) {
@@ -146,35 +137,9 @@ CollectHourlyData <- function(table_name, state, city, system_capacity, losses, 
 }
 
 
-CheckInputs <- function(state, city) {
-  con <- dbConnect(RMySQL::MySQL(),
-                   dbname='solarexport',
-                   username=username,
-                   password=password,
-                   host='stolemarch.cskdhnmb36bo.us-east-1.rds.amazonaws.com',
-                   port=3306)
-  query <- sprintf("Select city from demand_high where state='%s' group by city", state)
-  cities_frame <- dbGetQuery(con, query)
-  dbDisconnect(con)
-
-  cities <- cities_frame$city
-  if (city %in% cities) {return ("Ok")}
-  else {return (NULL)}
-}
-
-GetUtilityandRate <- function(state, city) {
-  results <- PingRatesAPI(city, state) 
-  utility <- results[1]
-  rate <- results[2]
-  utility_rate_summary <- sprintf("%s @ estimated retail rate of $%s/kWh.", utility, rate)
-  return (utility_rate_summary)
-}
 
 
-
-
-
-###############################
+################## Minor functions #############
 
 
 
@@ -190,7 +155,6 @@ GetCities <- function(state) {
   dbDisconnect(con)
   return (selected_frame$city)
 }
-
 
 
 GetAnnualExportShare <- function(city_month_frame) {
@@ -231,28 +195,56 @@ GetTotalSolarGen <- function(city_month_frame) {
 }
 
 
-##############################
+CheckInputs <- function(state, city) {
+  con <- dbConnect(RMySQL::MySQL(),
+                   dbname='solarexport',
+                   username=username,
+                   password=password,
+                   host='stolemarch.cskdhnmb36bo.us-east-1.rds.amazonaws.com',
+                   port=3306)
+  query <- sprintf("Select city from demand_high where state='%s' group by city", state)
+  cities_frame <- dbGetQuery(con, query)
+  dbDisconnect(con)
 
+  cities <- cities_frame$city
+  if (city %in% cities) {return ("Ok")}
+  else {return (NULL)}
+}
+
+GetUtilityandRate <- function(state, city) {
+  results <- PingRatesAPI(city, state) 
+  utility <- results[1]
+  rate <- results[2]
+  utility_rate_summary <- sprintf("%s @ estimated retail rate of $%s/kWh.", utility, rate)
+  return (utility_rate_summary)
+}
+
+
+
+################## Shiny #############
 
 
 shinyServer(
   
   function(input, output, session) {
+
+    ### Important data translations
+
+    table_name <- reactive({
+      if (input$load_profile == "Light") {"demand_low"}
+      else if (input$load_profile == "Typical") {"demand_base"}
+      else if (input$load_profile == "Heavy") {"demand_high"}
+    })
     
-    state <- reactive({
-      state.abb[grep(input$state, state.name)]
-        })
+    state <- reactive({state.abb[grep(input$state, state.name)]})
     
     output$city_ui <- renderUI({
       shiny::validate(need(state(), "Loading..."))
       selectizeInput("city", "Choose Nearest Location: ", GetCities(state()), multiple=F)
     })
     
-    table_name <- reactive({
-      if (input$load_profile == "Light") {"demand_low"}
-      else if (input$load_profile == "Typical") {"demand_base"}
-      else if (input$load_profile == "Heavy") {"demand_high"}
-    })
+    
+    ### Collect all data after input requirements are satisfied
     
     city_frame <- reactive({
       shiny::validate(need(state(), "Loading..."))
@@ -261,7 +253,10 @@ shinyServer(
       shiny::validate(need(input$load_profile, "Loading..."))
       shiny::validate(need(CheckInputs(state(),input$city), "Loading..."))
       CollectHourlyData(table_name(), state(), input$city, input$system_capacity, input$losses, input$azimuth, input$tilt, input$storage_limit)})
-    
+  
+
+    ### Create summary frames by month and day
+
     city_month_frame <- reactive({
 
         city_frame() %>% group_by(month) %>%
@@ -273,11 +268,16 @@ shinyServer(
                   export_share_of_solar = solar_export / solar_gen)
     })
     
-    
     city_day_frame <- reactive({city_frame() %>% filter(date == input$date)})
-    
+
+
+    ### Set graph and message colors 
+
     custom_colors <- setNames(c("#04B562","#0C6199","#57595C"), c("solar_onsite", "solar_export","grid_usage"))
-    
+
+
+    ### Primary graphs
+
     solar_gen_graph <- function() {
       solar_gen_frame <- city_month_frame()[,c("month","solar_onsite","solar_export")]
       solar_gen_melted <- melt(solar_gen_frame, id.vars = "month")
@@ -336,33 +336,40 @@ shinyServer(
         ggtitle("Total solar generation and total electric load, by hour") +
         theme(plot.title = element_text(size=18, face="bold", color="#4d3a7d", margin = margin(10, 0, 10, 0))) 
     }
+
+    ### Connect graphs to shiny output
     
     output$solar_gen <- renderPlot({solar_gen_graph()})
     output$load <- renderPlot({load_graph()})
     output$nem <- renderPlot({nem_graph()})
     output$day <- renderPlot({day_graph()})
+
+    ### Create app messages
     
     annual_export_share <- reactive({GetAnnualExportShare(city_month_frame())})
     net_grid_use <- reactive({GetNetGridUse(city_month_frame())})
     solar_share <- reactive({GetSolarShare(city_month_frame())})
     utility_rate_summary <- reactive({GetUtilityandRate(state(), input$city)})
+
+    ### Connect messages to output
     
     output$annual_export_share_text <- renderText({annual_export_share()})
     output$net_grid_use_text <- renderText({net_grid_use()})
     output$solar_share_text <- renderText({solar_share()})
     output$utility_rate_summary_text <- renderText({utility_rate_summary()})
-    
     output$total_electric_text <- renderText({GetTotalElectricUse(city_month_frame())})
     output$total_solar_text <- renderText({GetTotalSolarGen(city_month_frame())})
 
+    ### CSV download
+
     output$download_data <- downloadHandler(
-      
       filename = 'hourly_solar_and_load.csv',
       content = function(file) {
-        
         write.csv(city_frame(), file, row.names=F)
       })
     
+    ### Animation 
+
     onclick("toggle_advanced", toggle(id = "advanced", anim = TRUE))
     onclick("toggle_sources", toggle(id = "sources", anim = TRUE))
     onclick("toggle_hints", toggle(id = "hints", anim = TRUE))
